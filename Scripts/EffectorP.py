@@ -20,12 +20,7 @@
 
     Contact: jana.sperschneider@csiro.au
 """
-# -----------------------------------------------------------------------------------------------------------
-# -----------------------------------------------------------------------------------------------------------
-# -----------------------------------------------------------------------------------------------------------
-# -----------------------------------------------------------------------------------------------------------
-# -----------------------------------------------------------------------------------------------------------
-# -----------------------------------------------------------------------------------------------------------
+
 import os
 import sys
 import functions
@@ -33,90 +28,69 @@ import subprocess
 import errno
 import uuid
 import shutil
-# -----------------------------------------------------------------------------------------------------------
-# -----------------------------------------------------------------------------------------------------------
-# -----------------------------------------------------------------------------------------------------------
-# Main Program starts here
-# -----------------------------------------------------------------------------------------------------------
-# -----------------------------------------------------------------------------------------------------------
-# -----------------------------------------------------------------------------------------------------------
+from tempfile import TemporaryDirectory
 
-def main():
-    # -----------------------------------------------------------------------------------------------------------
-    SCRIPT_PATH = sys.path[0]
-    # Change the path to WEKA to the appropriate location on your computer
-    WEKA_PATH = SCRIPT_PATH + '/weka-3-6-12/weka.jar'
-    PEPSTATS_PATH = SCRIPT_PATH + '/EMBOSS-6.5.7/emboss/'
+
+def get_weka_path(script_path):
+
+    weka_path = os.environ.get("WEKA36")
+    if weka_path is None:
+        weka_path = os.path.join(script_path, 'weka-3-6-12', 'weka.jar')
+    else:
+        print("using env")
+        weka_path = os.path.join(weka_path, 'weka.jar')
+
     # -----------------------------------------------------------------------------------------------------------
     # Check that the path to the WEKA software exists
-    path_exists = os.access(WEKA_PATH, os.F_OK)
+    path_exists = os.access(weka_path, os.F_OK)
     if not path_exists:
         print()
         print("Path to WEKA software does not exist!")
-        print("Check the installation and the given path to the WEKA software %s in EffectorP.py (line 47)." % WEKA_PATH)
+        print("Check the installation and the given path to the WEKA software {} in EffectorP.py (line 49).".format(weka_path))
+        print("Alternatively set the environment variable 'WEKA36' to point to the folder containing the weka.jar file.")
         print()
         sys.exit(1)
-    # -----------------------------------------------------------------------------------------------------------
+    
+    return weka_path
+
+
+def get_emboss_path(script_path):
+    emboss_path = shutil.which("pepstats")
+    if emboss_path is None:
+        emboss_path = os.path.join(script_path, 'EMBOSS-6.5.7', 'emboss')
+    else:
+        print("Using path")
+        emboss_path = os.path.split(emboss_path)[0]
+
     # Check that the path to the EMBOSS software exists for pepstats
-    path_exists = os.access(PEPSTATS_PATH, os.F_OK)
+    path_exists = os.access(emboss_path, os.F_OK)
     if not path_exists:
         print()
         print("Path to EMBOSS software does not exist!")
-        print("Check the installation and the given path to the EMBOSS software %s in EffectorP.py (line 48)." % PEPSTATS_PATH)
+        print("Check the installation and the given path to the EMBOSS software {} in EffectorP.py (line 70).".format(emboss_path))
+        print("Alternatively, make sure that pepstats is in a directory on your PATH.")
         print()
         sys.exit(1)
-    # -----------------------------------------------------------------------------------------------------------
-    commandline = sys.argv[1:]
-    # -----------------------------------------------------------------------------------------------------------
-    if commandline:
-        FASTA_FILE, short_format, output_file, effector_output = functions.scan_arguments(commandline)
-	# If no FASTA file was provided with the -i option
-        if not FASTA_FILE:
-            print()
-            print('Please specify a FASTA input file using the -i option!')
-            functions.usage()
-    else:
-        functions.usage()
-    # -----------------------------------------------------------------------------------------------------------
-    # Temporary folder name identifier that will be used to store results
-    FOLDER_IDENTIFIER = str(uuid.uuid4())
-    # Path to temporary results folder
-    if not os.path.exists(SCRIPT_PATH + '/tmp/'):
-        os.makedirs(SCRIPT_PATH + '/tmp/')
-    RESULTS_PATH = SCRIPT_PATH + '/tmp/' + FOLDER_IDENTIFIER + '/'
-    # -----------------------------------------------------------------------------------------------------------
-    # Check if FASTA file exists
-    try:
-        open(FASTA_FILE, 'r')
-    except OSError as e:
-        print("Unable to open FASTA file:", FASTA_FILE)  # Does not exist OR no read permissions
-        print("I/O error({0}): {1}".format(e.errno, e.strerror))
-        sys.exit(1)
-    # -----------------------------------------------------------------------------------------------------------
-    # Try to create folder where results will be stored
-    try:
-        os.mkdir(RESULTS_PATH)
-    except OSError as exception:
-        if exception.errno != errno.EEXIST:
-            raise
-    # -----------------------------------------------------------------------------------------------------------
+
+    return emboss_path
+
+
+def run_pepstats(RESULTS_PATH, FOLDER_IDENTIFIER, SEQUENCES, PEPSTATS_PATH, ORIGINAL_IDENTIFIERS):
     # Extract the identifiers and sequences from input FASTA file
-    ORIGINAL_IDENTIFIERS, SEQUENCES = functions.get_seqs_ids_fasta(FASTA_FILE)
-    # -----------------------------------------------------------------------------------------------------------
-    print('-----------------')
-    print()
-    print("EffectorP is running for", len(ORIGINAL_IDENTIFIERS), "proteins given in FASTA file", FASTA_FILE)
-    print()
-    # -----------------------------------------------------------------------------------------------------------
     # Write new FASTA file with short identifiers because pepstats can't handle long names
-    f_output = RESULTS_PATH + FOLDER_IDENTIFIER + '_short_ids.fasta'
+
+    f_output = os.path.join(RESULTS_PATH, FOLDER_IDENTIFIER + '_short_ids.fasta')
     SHORT_IDENTIFIERS = functions.write_FASTA_short_ids(f_output, ORIGINAL_IDENTIFIERS, SEQUENCES)
-    # -----------------------------------------------------------------------------------------------------------
+
     # Call pepstats
     print('Call pepstats...')
-    ProcessExe = PEPSTATS_PATH + 'pepstats'
-    ParamList = [ProcessExe, '-sequence', RESULTS_PATH + FOLDER_IDENTIFIER + '_short_ids.fasta',
-              '-outfile', RESULTS_PATH + FOLDER_IDENTIFIER + '.pepstats']
+
+    ProcessExe = os.path.join(PEPSTATS_PATH, 'pepstats')
+    ParamList = [
+        ProcessExe, '-sequence',
+        os.path.join(RESULTS_PATH, FOLDER_IDENTIFIER + '_short_ids.fasta'),
+        '-outfile', os.path.join(RESULTS_PATH, FOLDER_IDENTIFIER + '.pepstats')
+    ]
 
     try:
         Process = subprocess.Popen(ParamList, shell=False)
@@ -132,34 +106,44 @@ def main():
     except:
         e = sys.exc_info()[1]
         print("Error calling pepstats: %s" % e)
-        sys.exit()
-    print('Done.')
-    print()
-    # -----------------------------------------------------------------------------------------------------------
+        sys.exit(1)
+
+    print('Done.\n')
+
     # Parse pepstats file
     print('Scan pepstats file')
-    pepstats_dic = functions.pepstats(SHORT_IDENTIFIERS, SEQUENCES, RESULTS_PATH + FOLDER_IDENTIFIER + '.pepstats')
-    print('Done.')
-    print()
-    # -----------------------------------------------------------------------------------------------------------
+    pepstats_dic = functions.pepstats(
+        SHORT_IDENTIFIERS, SEQUENCES,
+        os.path.join(RESULTS_PATH, FOLDER_IDENTIFIER + '.pepstats')
+    )
+
+    print('Done.\n')
+    return pepstats_dic, SHORT_IDENTIFIERS
+
+
+def run_weka(RESULTS_PATH, FOLDER_IDENTIFIER, pepstats_dic, SCRIPT_PATH, WEKA_PATH, ORIGINAL_IDENTIFIERS, SEQUENCES, SHORT_IDENTIFIERS):
     # Write the WEKA arff file for classification of the input FASTA file
-    weka_input = RESULTS_PATH + FOLDER_IDENTIFIER + '.arff'
+    weka_input = os.path.join(RESULTS_PATH, FOLDER_IDENTIFIER + '.arff')
     functions.write_weka_input(weka_input, SHORT_IDENTIFIERS, pepstats_dic)
-    # -----------------------------------------------------------------------------------------------------------
+
     # Call WEKA Naive Bayes model for classification of input FASTA file
     print('Start classification with EffectorP...')
 
-    ParamList = ['java', '-cp', WEKA_PATH, 'weka.classifiers.bayes.NaiveBayes', '-l', SCRIPT_PATH + '/trainingdata_samegenomes_iteration15_ratio3_bayes.model',
-             '-T', RESULTS_PATH + FOLDER_IDENTIFIER + '.arff', '-p', 'first-last']
+    ParamList = [
+        'java', '-cp', WEKA_PATH, 'weka.classifiers.bayes.NaiveBayes',
+        '-l', os.path.join(SCRIPT_PATH, 'trainingdata_samegenomes_iteration15_ratio3_bayes.model'),
+        '-T', os.path.join(RESULTS_PATH, FOLDER_IDENTIFIER + '.arff'),
+        '-p', 'first-last'
+    ]
 
-    with open(RESULTS_PATH + FOLDER_IDENTIFIER + '_Predictions.txt', 'wb') as out:
+    with open(os.path.join(RESULTS_PATH, FOLDER_IDENTIFIER + '_Predictions.txt'), 'wb') as out:
         try:
             Process = subprocess.Popen(ParamList, shell=False, stdout=out)
             sts = Process.wait()
             cstdout, cstderr = Process.communicate()
 
             if Process.returncode:
-                raise Exception("Calling WEKA returned %s"%Process.returncode)
+                raise Exception("Calling WEKA returned %s" % Process.returncode)
             if cstdout:
                 pass
             elif cstderr:
@@ -168,14 +152,56 @@ def main():
             e = sys.exc_info()[1]
             print("Error calling WEKA: %s" % e)
             sys.exit(1)
-        print('Done.')
-        print()
+        print('Done.\n')
         print('-----------------')
-    # -----------------------------------------------------------------------------------------------------------
+
     # Parse the WEKA output file
-    file_input = RESULTS_PATH + FOLDER_IDENTIFIER + '_Predictions.txt'
+    file_input = os.path.join(RESULTS_PATH, FOLDER_IDENTIFIER + '_Predictions.txt')
     predicted_effectors, predictions = functions.parse_weka_output(file_input, ORIGINAL_IDENTIFIERS, SEQUENCES)
-    # -----------------------------------------------------------------------------------------------------------
+    return predicted_effectors, predictions
+
+
+def main():
+    SCRIPT_PATH = sys.path[0]
+    # Change the path to WEKA to the appropriate location on your computer
+    WEKA_PATH = get_weka_path(SCRIPT_PATH)
+    PEPSTATS_PATH = get_emboss_path(SCRIPT_PATH)
+
+    commandline = sys.argv[1:]
+
+    if commandline:
+        FASTA_FILE, short_format, output_file, effector_output = functions.scan_arguments(commandline)
+	# If no FASTA file was provided with the -i option
+        if not FASTA_FILE:
+            print()
+            print('Please specify a FASTA input file using the -i option!')
+            functions.usage()
+    else:
+        functions.usage()
+
+    # Check if FASTA file exists
+    try:
+        open(FASTA_FILE, 'r')
+    except OSError as e:
+        print("Unable to open FASTA file:", FASTA_FILE)  # Does not exist OR no read permissions
+        print("I/O error({0}): {1}".format(e.errno, e.strerror))
+        sys.exit(1)
+
+    ORIGINAL_IDENTIFIERS, SEQUENCES = functions.get_seqs_ids_fasta(FASTA_FILE)
+
+    print('-----------------')
+    print()
+    print("EffectorP is running for", len(ORIGINAL_IDENTIFIERS), "proteins given in FASTA file", FASTA_FILE)
+    print()
+
+    # Temporary folder name identifier that will be used to store results
+    FOLDER_IDENTIFIER = str(uuid.uuid4())
+
+    # Path to temporary results folder
+    with TemporaryDirectory() as RESULTS_PATH:
+        pepstats_dic, SHORT_IDENTIFIERS = run_pepstats(RESULTS_PATH, FOLDER_IDENTIFIER, SEQUENCES, PEPSTATS_PATH, ORIGINAL_IDENTIFIERS)
+        predicted_effectors, predictions = run_weka(RESULTS_PATH, FOLDER_IDENTIFIER, pepstats_dic, SCRIPT_PATH, WEKA_PATH, ORIGINAL_IDENTIFIERS, SEQUENCES, SHORT_IDENTIFIERS)
+
     # If user wants the stdout output directed to a specified file
     if output_file:
 
@@ -197,17 +223,13 @@ def main():
         else:
             print(functions.short_output(predictions))
             print(functions.long_output(ORIGINAL_IDENTIFIERS, predicted_effectors))
-    # -----------------------------------------------------------------------------------------------------------
+
     # If the user additionally wants to save the predicted effectors in a provided FASTA file
     if effector_output:
         with open(effector_output, 'w') as f_output:
             for effector, prob, sequence in predicted_effectors:
                 f_output.writelines('>' + effector + ' | Effector probability: ' + str(prob) + '\n')
                 f_output.writelines(sequence + '\n')
-    # -----------------------------------------------------------------------------------------------------------
-    # Clean up and delete temporary folder that was created
-    shutil.rmtree(RESULTS_PATH)
-    # -----------------------------------------------------------------------------------------------------------
     return
 
 if __name__ == '__main__':
