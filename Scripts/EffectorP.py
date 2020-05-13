@@ -37,7 +37,6 @@ def get_weka_path(script_path):
     if weka_path is None:
         weka_path = os.path.join(script_path, 'weka-3-6-12', 'weka.jar')
     else:
-        print("using env")
         weka_path = os.path.join(weka_path, 'weka.jar')
 
     # -----------------------------------------------------------------------------------------------------------
@@ -59,7 +58,6 @@ def get_emboss_path(script_path):
     if emboss_path is None:
         emboss_path = os.path.join(script_path, 'EMBOSS-6.5.7', 'emboss')
     else:
-        print("Using path")
         emboss_path = os.path.split(emboss_path)[0]
 
     # Check that the path to the EMBOSS software exists for pepstats
