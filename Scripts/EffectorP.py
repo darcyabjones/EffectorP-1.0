@@ -49,7 +49,7 @@ def get_weka_path(script_path):
         print("Alternatively set the environment variable 'WEKA36' to point to the folder containing the weka.jar file.")
         print()
         sys.exit(1)
-    
+
     return weka_path
 
 
@@ -203,7 +203,7 @@ def main():
     # If user wants the stdout output directed to a specified file
     if output_file:
 
-        with open(output_file, 'wb') as out:
+        with open(output_file, 'w') as out:
             # Short format: output predictions for all proteins as tab-delimited table
             if short_format:
                 out.writelines(functions.short_output(predictions))
